@@ -89,7 +89,7 @@ def iemocap(path):
     return positives, neutrals, negatives
 
 
-def polarity_set_2v(path1, path2, path3, path4, path5, path_cur):
+def polarity_set_2v(path1, path2, path5, path_cur):
     positives, neutrals,negatives = [], [], []
     data2 = pd.read_csv(path_cur)
 
@@ -112,8 +112,6 @@ def polarity_set_2v(path1, path2, path3, path4, path5, path_cur):
     ### 对MOSI的处理
     mosi_pos, mosi_neu, mosi_negatives = mosi_mosei(path1)
     mosei_pos, mosei_neu, mosei_negatives = mosi_mosei(path2)
-    laps_pos, laps_neu, laps_negatives = absa(path3,start='1000')
-    res_pos, res_neu, res_negatives = absa(path4,start='2000')
     iemocap_pos, iemocap_neu, iemocap_negatives = iemocap(path5)
 
 
@@ -121,20 +119,15 @@ def polarity_set_2v(path1, path2, path3, path4, path5, path_cur):
     mosi_neu.extend(mosei_neu)
     mosi_negatives.extend(mosei_negatives)
 
-    laps_pos.extend(res_pos)
-    laps_neu.extend(res_neu)
-    laps_negatives.extend(res_negatives)
+    return (positives, neutrals, negatives), (mosi_pos, mosi_neu, mosi_negatives), (iemocap_pos, iemocap_neu, iemocap_negatives)
 
-    return (positives, neutrals, negatives), (mosi_pos, mosi_neu, mosi_negatives), (laps_pos, laps_neu, laps_negatives), (iemocap_pos, iemocap_neu, iemocap_negatives)
-
-def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen, absa_sen):
+def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen):
 
     mosi_len = len(mosi_sen)
     meld_len = len(meld_sen)
     iemocap_len = len(iemocap_sen)
-    absa_len = len(absa_sen)
 
-    print('mosi/mosei len:{}, meld len:{}, iemocap len:{}, res/laps len:{}'.format(mosi_len, meld_len, iemocap_len, absa_len))
+    print('mosi/mosei len:{}, meld len:{}, iemocap len:{}'.format(mosi_len, meld_len, iemocap_len))
 
     cosine_sims_mosi2meld = np.zeros([mosi_len, meld_len])
     cosine_sims_mosi2iemocap = np.zeros([mosi_len, iemocap_len])
@@ -142,9 +135,6 @@ def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen, absa_sen):
     cosine_sims_iemocap2mosi = np.zeros([iemocap_len, mosi_len])
     cosine_sims_meld2iemocap = np.zeros([meld_len,iemocap_len])
     cosine_sims_iemocap2meld = np.zeros([iemocap_len,meld_len])
-    cosine_sims_absa2mosi = np.zeros([absa_len, mosi_len])
-    cosine_sims_absa2meld = np.zeros([absa_len, meld_len])
-    cosine_sims_absa2iemocap = np.zeros([absa_len, iemocap_len])
 
     # sentence12 = sentence1[:500] + sentence2[:500]
     # sentence12 = sentence1 + sentence2
@@ -152,7 +142,7 @@ def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen, absa_sen):
     # sentences = []
     # for sen in sentence12:
     # sentences.append(sen[1])
-    mosi, meld, iemocap, absa = [], [], [], []
+    mosi, meld, iemocap = [], [], []
     for sen in mosi_sen:
         mosi.append(sen[1])
 
@@ -161,9 +151,6 @@ def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen, absa_sen):
 
     for sen in iemocap_sen:
         iemocap.append(sen[1])
-        
-    for sen in absa_sen:
-        absa.append(sen[1])
 
 
 
@@ -187,11 +174,6 @@ def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen, absa_sen):
     input_iemocap = tokenizer(iemocap, padding=True, truncation=True, return_tensors="pt")
     with torch.no_grad():
         embeddings_iemocap = model(**input_iemocap, output_hidden_states=False, return_dict=True).pooler_output
-        
-    print('calculate the absa')
-    input_absa = tokenizer(absa, padding=True, truncation=True, return_tensors="pt")
-    with torch.no_grad():
-        embeddings_absa = model(**input_absa, output_hidden_states=False, return_dict=True).pooler_output
 
 
     print('calculate the simility of mosi to meld/iemocap')
@@ -224,30 +206,17 @@ def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen, absa_sen):
         for j in range(meld_len):
             cosine_sim_i_j = 1 - cosine(embeddings_iemocap[i], embeddings_meld[j])
             cosine_sims_iemocap2meld[i][j] = cosine_sim_i_j
-            
-    print('calculate the simility of iemocap to mosi/meld/iemocap')
-    for i in range(absa_len):
-        for j in range(mosi_len):
-            cosine_sim_i_j = 1 - cosine(embeddings_absa[i], embeddings_mosi[j])
-            cosine_sims_absa2mosi[i][j] = cosine_sim_i_j
-        for j in range(meld_len):
-            cosine_sim_i_j = 1 - cosine(embeddings_absa[i], embeddings_meld[j])
-            cosine_sims_absa2meld[i][j] = cosine_sim_i_j
-        
-        for j in range(iemocap_len):
-            cosine_sim_i_j = 1 - cosine(embeddings_absa[i], embeddings_iemocap[j])
-            cosine_sims_absa2iemocap[i][j] = cosine_sim_i_j
+
             
     print('embeddings calculation finished!')
 
     ###生成标签字典
     
-    ### mosi/meld/iemocap/absa都要生成缺失的那部分标签的标签词典，
+    ### mosi/meld/iemocap/都要生成缺失的那部分标签的标签词典，
 
     mosi_labels = {}
     meld_labels = {}
     iemocap_labels = {}
-    absa_labels = {}
     
     for i in range(mosi_len):
         ### mosi的缺失为meld和iemocap的标签
@@ -289,23 +258,8 @@ def cal_cosine_sim_2v(mosi_sen, meld_sen, iemocap_sen, absa_sen):
         else:
             print('{} already exists'.format(str(id)))
         
-    for i in range(absa_len):
-        mosi_ix_row = np.argmax(cosine_sims_absa2mosi[i,:])
-        meld_ix_row = np.argmax(cosine_sims_absa2meld[i,:])
-        iemocap_ix_row = np.argmax(cosine_sims_absa2iemocap[i,:])
-        
-        id = absa_sen[i][0]
-        mosi_label = mosi_sen[mosi_ix_row][3]
-        meld_label = meld_sen[meld_ix_row][3]
-        iemocap_label = iemocap_sen[iemocap_ix_row][2]
-        label = (mosi_label, meld_label, iemocap_label)
-        if id not in absa_labels.keys():
-            absa_labels[id] = label
-        else:
-            print('{} already exists'.format(str(id)))
-        
 
-    return mosi_labels, meld_labels, iemocap_labels, absa_labels
+    return mosi_labels, meld_labels, iemocap_labels
 
 
 #path = './sup-simcse-bert-base-uncased'
@@ -413,7 +367,8 @@ def mosi_generate(path, path_out, pos_id2label, neg_id2label):
     df.to_csv(path_out, index=0)
 
 
-name = 'princeton-nlp/sup-simcse-bert-base-uncased'
+# name = 'princeton-nlp/sup-simcse-bert-base-uncased'
+name = './princeton-nlp/sup-simcse-bert-base-uncased'
 tokenizer = AutoTokenizer.from_pretrained(name)
 model = AutoModel.from_pretrained(name)
 
@@ -459,11 +414,11 @@ print('model load finished!')
 mosi_path = '../datasets/MOSI/MOSI-label.csv'
 mosei_path = '../datasets/MOSEI/MOSEI-label.csv'
 meld_path = '../datasets/MELD/all_sent_emo.csv'
-all_laps_path = '../datasets/Laptops/all_convert.json'
-all_res_path = '../datasets/Restaurants/15res/all_convert.json'
+# all_laps_path = '../datasets/Laptops/all_convert.json'
+# all_res_path = '../datasets/Restaurants/15res/all_convert.json'
 iemocap_path = '../datasets/IEMOCAP/IEMOCAP_all.csv'
 
-(meld_pos, meld_neu, meld_neg), (mosi_pos, mosi_neu, mosi_neg), (absa_pos, absa_neu, absa_neg), (iemocap_pos, iemocap_neu, iemocap_neg) = polarity_set_2v(mosi_path, mosei_path, all_laps_path, all_res_path, iemocap_path, meld_path)
+(meld_pos, meld_neu, meld_neg), (mosi_pos, mosi_neu, mosi_neg), (iemocap_pos, iemocap_neu, iemocap_neg) = polarity_set_2v(mosi_path, mosei_path, iemocap_path, meld_path)
 
 meld_train_path = '../datasets/MELD/train_sent_emo.csv'
 meld_dev_path = '../datasets/MELD/dev_sent_emo.csv'
@@ -480,26 +435,26 @@ iemocap_out_path = '../datasets/IEMOCAP/new-iemocap-label-v3.csv'
 
 
 
-laps_train_path = '../datasets/Laptops/train_convert.json'
-laps_dev_path = '../datasets/Laptops/dev_convert.json'
-laps_test_path = '../datasets/Laptops/test_convert.json'
+# laps_train_path = '../datasets/Laptops/train_convert.json'
+# laps_dev_path = '../datasets/Laptops/dev_convert.json'
+# laps_test_path = '../datasets/Laptops/test_convert.json'
 
-res_train_path = '../datasets/Restaurants/16res/train_convert.json'
-res_dev_path = '../datasets/Restaurants/16res/dev_convert.json'
-res_test_path = '../datasets/Restaurants/16res/test_convert.json'
+# res_train_path = '../datasets/Restaurants/16res/train_convert.json'
+# res_dev_path = '../datasets/Restaurants/16res/dev_convert.json'
+# res_test_path = '../datasets/Restaurants/16res/test_convert.json'
 
-res_train_out_path = '../datasets/Restaurants/16res/new_Res-train-label-v3.csv'
-res_dev_out_path = '../datasets/Restaurants/16res/new_Res-dev-label-v3.csv'
-res_test_out_path = '../datasets/Restaurants/16res/new_Res-test-label-v3.csv'
+# res_train_out_path = '../datasets/Restaurants/16res/new_Res-train-label-v3.csv'
+# res_dev_out_path = '../datasets/Restaurants/16res/new_Res-dev-label-v3.csv'
+# res_test_out_path = '../datasets/Restaurants/16res/new_Res-test-label-v3.csv'
 
-laps_train_out_path = '../datasets/Laptops/new_Laps-train-label-v3.csv'
-laps_dev_out_path = '../datasets/Laptops/new_Laps-dev-label-v3.csv'
-laps_test_out_path = '../datasets/Laptops/new_Laps-test-label-v3.csv'
+# laps_train_out_path = '../datasets/Laptops/new_Laps-train-label-v3.csv'
+# laps_dev_out_path = '../datasets/Laptops/new_Laps-dev-label-v3.csv'
+# laps_test_out_path = '../datasets/Laptops/new_Laps-test-label-v3.csv'
 
 
-mosi_pos_label, meld_pos_label, iemocap_pos_label, absa_pos_label = cal_cosine_sim_2v(mosi_pos, meld_pos, iemocap_pos, absa_pos)
+mosi_pos_label, meld_pos_label, iemocap_pos_label = cal_cosine_sim_2v(mosi_pos, meld_pos, iemocap_pos)
 
-mosi_neg_label, meld_neg_label, iemocap_neg_label, absa_neg_label = cal_cosine_sim_2v(mosi_neg, meld_neg, iemocap_neg, absa_neg)
+mosi_neg_label, meld_neg_label, iemocap_neg_label = cal_cosine_sim_2v(mosi_neg, meld_neg, iemocap_neg)
 
 
 
@@ -514,11 +469,11 @@ meld_generate(meld_test_path, meld_test_out_path, meld_pos_label, meld_neg_label
 iemocap_generate(iemocap_path, iemocap_out_path, iemocap_pos_label, iemocap_neg_label)
 
 
-lapres_generate(res_train_path, res_train_out_path, absa_pos_label, absa_neg_label)
-lapres_generate(res_dev_path, res_dev_out_path, absa_pos_label, absa_neg_label)
-lapres_generate(res_test_path, res_test_out_path, absa_pos_label, absa_neg_label)
+# lapres_generate(res_train_path, res_train_out_path, absa_pos_label, absa_neg_label)
+# lapres_generate(res_dev_path, res_dev_out_path, absa_pos_label, absa_neg_label)
+# lapres_generate(res_test_path, res_test_out_path, absa_pos_label, absa_neg_label)
 
 
-lapres_generate(laps_train_path, laps_train_out_path, absa_pos_label, absa_neg_label, start='2000')
-lapres_generate(laps_dev_path, laps_dev_out_path, absa_pos_label, absa_neg_label, start='2000')
-lapres_generate(laps_test_path, laps_test_out_path, absa_pos_label, absa_neg_label, start='2000')
+# lapres_generate(laps_train_path, laps_train_out_path, absa_pos_label, absa_neg_label, start='2000')
+# lapres_generate(laps_dev_path, laps_dev_out_path, absa_pos_label, absa_neg_label, start='2000')
+# lapres_generate(laps_test_path, laps_test_out_path, absa_pos_label, absa_neg_label, start='2000')
